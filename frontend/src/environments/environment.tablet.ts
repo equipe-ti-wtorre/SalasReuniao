@@ -2,7 +2,7 @@ export const environment = {
   production: true,
   // Emulador Android: use http://10.0.2.2:3000/api
   // Tablet físico na rede: use http://IP-DO-SEU-PC:3000/api (ex.: http://192.168.1.50:3000/api)
-  apiBaseUrl: 'http://10.200.128.60:3000/api',
+  apiBaseUrl: 'https://salas.allianzparque.com.br/api',
   kiosk: {
     localidade: 'Allianz',
     roomEmail: 'sala.fa@allianzparque.com.br',

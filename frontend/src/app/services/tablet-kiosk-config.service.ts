@@ -32,8 +32,15 @@ export class TabletKioskConfigService {
     return this.configSubject.value;
   }
 
+  normalizeApiBaseUrl(url: string): string {
+    return url.trim().replace(/\/+$/, '');
+  }
+
   saveConfig(overrides: TabletKioskConfigOverrides): void {
     const merged = { ...this.getConfig(), ...overrides };
+    if (merged.apiBaseUrl) {
+      merged.apiBaseUrl = this.normalizeApiBaseUrl(merged.apiBaseUrl);
+    }
     this.validate(merged);
     const stored = this.readStored();
     const nextStored: TabletKioskConfigOverrides = { ...stored, ...overrides };

@@ -16,6 +16,10 @@ import {
   mapBookingCheckInFlags,
 } from "../../domain/checkIn";
 import { GraphClientFactory } from "./GraphClientFactory";
+import {
+  isSyntheticScheduleEventId,
+  mergeScheduleItemsIntoBookings,
+} from "../../domain/mergeScheduleBookings";
 
 type GraphRoomResponse = {
   value: Array<{
@@ -39,6 +43,7 @@ type GraphScheduleResponse = {
 };
 
 type GraphCalendarEventResponse = {
+  "@odata.nextLink"?: string;
   value: Array<{
     id: string;
     subject?: string;
@@ -439,6 +444,47 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
     }
   }
 
+  private readonly calendarViewMaxEventsPerRoom = Number(
+    process.env.GRAPH_CALENDAR_VIEW_MAX ?? "500",
+  );
+
+  private async fetchCalendarViewEvents(
+    client: ReturnType<GraphClientFactory["create"]>,
+    mailbox: string,
+    graphStart: string,
+    graphEnd: string,
+    select: string,
+  ): Promise<GraphCalendarEvent[]> {
+    const collected: GraphCalendarEvent[] = [];
+    const maxEvents = Math.max(50, this.calendarViewMaxEventsPerRoom);
+    let nextUrl: string | null =
+      `/users/${encodeURIComponent(mailbox)}/calendarView` +
+      `?startDateTime=${encodeURIComponent(graphStart)}` +
+      `&endDateTime=${encodeURIComponent(graphEnd)}` +
+      `&$top=50`;
+
+    while (nextUrl && collected.length < maxEvents) {
+      const response = (await this.withRetry(() =>
+        client
+          .api(nextUrl!)
+          .header("Prefer", `outlook.timezone="${this.graphTimeZone}"`)
+          .select(select)
+          .get(),
+      )) as GraphCalendarEventResponse;
+
+      const page = response.value ?? [];
+      const remaining = maxEvents - collected.length;
+      collected.push(...page.slice(0, remaining));
+
+      if (collected.length >= maxEvents || !response["@odata.nextLink"]) {
+        break;
+      }
+      nextUrl = response["@odata.nextLink"];
+    }
+
+    return collected;
+  }
+
   async listBookings(tenant: Tenant, input: { start: string; end: string }): Promise<Booking[]> {
     const client = this.graphFactory.create(tenant);
     const rooms = await this.listRooms(tenant);
@@ -449,27 +495,35 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
 
     const graphStart = this.toGraphLocalDateTime(input.start);
     const graphEnd = this.normalizeEndOfDayBoundary(this.toGraphLocalDateTime(input.end));
+    const roomEmails = rooms.map((room) => room.email);
+    const schedules = await this.getSchedule(tenant, roomEmails, input.start, input.end);
+    const scheduleByRoom = new Map(
+      schedules.map((entry) => [entry.roomEmail.trim().toLowerCase(), entry]),
+    );
 
     const bookingsByRoom = await Promise.all(
       rooms.map(async (room) => {
-        const events = (await this.withRetry(() =>
-          client
-            .api(
-              `/users/${encodeURIComponent(room.email)}/calendarView` +
-                `?startDateTime=${encodeURIComponent(graphStart)}` +
-                `&endDateTime=${encodeURIComponent(graphEnd)}` +
-                `&$top=50`,
-            )
-            .header("Prefer", `outlook.timezone="${this.graphTimeZone}"`)
-            .select("id,subject,categories,start,end,organizer")
-            .get(),
-        )) as GraphCalendarEventResponse;
+        const events = await this.fetchCalendarViewEvents(
+          client,
+          room.email,
+          graphStart,
+          graphEnd,
+          "id,subject,categories,start,end,organizer",
+        );
 
-        return (events.value ?? [])
+        const calendarBookings = events
           .filter((event) => Boolean(event.id && event.start?.dateTime && event.end?.dateTime))
           .map((event) =>
             this.mapEventToBooking(event, room.email, room.name, input.start, input.end),
           );
+
+        const schedule = scheduleByRoom.get(room.email.trim().toLowerCase());
+        return mergeScheduleItemsIntoBookings(
+          calendarBookings,
+          schedule?.scheduleItems ?? [],
+          room.email,
+          room.name,
+        );
       }),
     );
 
@@ -596,6 +650,14 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
       title?: string;
     },
   ): Promise<void> {
+    if (isSyntheticScheduleEventId(eventId)) {
+      throw new AppError(
+        "BOOKING_NOT_FOUND",
+        "Esta ocupação foi detectada apenas no calendário da sala; cancele a reunião no Outlook.",
+        404,
+      );
+    }
+
     const client = this.graphFactory.create(tenant);
     const rooms = await this.listRooms(tenant);
     const booking = await this.getBooking(
@@ -697,20 +759,15 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
     const wantedTitle = title?.trim().toLowerCase();
 
     try {
-      const response = (await this.withRetry(() =>
-        client
-          .api(
-            `/users/${encodeURIComponent(mailbox)}/calendarView` +
-              `?startDateTime=${encodeURIComponent(graphStart)}` +
-              `&endDateTime=${encodeURIComponent(graphEnd)}` +
-              `&$top=50`,
-          )
-          .header("Prefer", `outlook.timezone="${this.graphTimeZone}"`)
-          .select("id,subject,start")
-          .get(),
-      )) as GraphCalendarEventResponse;
+      const events = await this.fetchCalendarViewEvents(
+        client,
+        mailbox,
+        graphStart,
+        graphEnd,
+        "id,subject,start",
+      );
 
-      for (const event of response.value ?? []) {
+      for (const event of events) {
         if (!event.id || !event.start?.dateTime) continue;
 
         const eventStart = this.normalizeGraphDateTime(event.start.dateTime, event.start.timeZone);
@@ -802,6 +859,7 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
         : fallbackEnd,
       ...(organizer ? { organizer } : {}),
       ...flags,
+      source: "calendar",
     };
   }
 
@@ -811,6 +869,10 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
     category: string,
     requesterEmail?: string,
   ): Promise<void> {
+    if (isSyntheticScheduleEventId(eventId)) {
+      throw new AppError("BOOKING_NOT_FOUND", "Reserva nao encontrada.", 404);
+    }
+
     const client = this.graphFactory.create(tenant);
     const rooms = await this.listRooms(tenant);
     const mailboxes = [

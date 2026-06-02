@@ -1,4 +1,5 @@
 import { checkInGraceMs } from "../../domain/checkIn";
+import { isSyntheticScheduleEventId } from "../../domain/mergeScheduleBookings";
 import { GraphRoomsGateway } from "../../domain/contracts/GraphRoomsGateway";
 import { KioskSettingsRepository } from "../../domain/contracts/KioskSettingsRepository";
 import { TenantRepository } from "../../domain/contracts/TenantRepository";
@@ -29,6 +30,7 @@ export class ProcessNoShowBookingsUseCase {
       );
 
       for (const booking of roomBookings) {
+        if (isSyntheticScheduleEventId(booking.eventId)) continue;
         if (!booking.requiresCheckIn || booking.checkedIn) continue;
 
         const startMs = Date.parse(booking.start);

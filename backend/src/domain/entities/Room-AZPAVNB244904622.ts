@@ -55,8 +55,6 @@ export interface Booking {
   organizer?: string;
   requiresCheckIn?: boolean;
   checkedIn?: boolean;
-  /** calendar = evento na mailbox da sala; schedule = ocupação só via getSchedule */
-  source?: "calendar" | "schedule";
 }
 
 export interface DirectoryUser {

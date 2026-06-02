@@ -33,6 +33,7 @@ export interface BookingDto {
   organizer?: string;
   requiresCheckIn?: boolean;
   checkedIn?: boolean;
+  source?: 'calendar' | 'schedule';
 }
 
 export interface RoomKioskSettingsDto {
@@ -74,7 +75,7 @@ export class RoomsApiService {
   ) {}
 
   private get baseUrl(): string {
-    return this.kioskConfig.getConfig().apiBaseUrl;
+    return this.kioskConfig.normalizeApiBaseUrl(this.kioskConfig.getConfig().apiBaseUrl);
   }
 
   getRooms(localidade: string): Observable<{ rooms: RoomDto[] }> {

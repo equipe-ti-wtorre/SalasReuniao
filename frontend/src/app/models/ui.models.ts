@@ -28,6 +28,7 @@ export interface BookingView {
   organizer?: string;
   requiresCheckIn?: boolean;
   checkedIn?: boolean;
+  source?: 'calendar' | 'schedule';
 }
 
 export interface BookingSubmitPayload {

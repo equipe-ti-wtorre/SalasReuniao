@@ -139,15 +139,21 @@ export class RoomScheduleService {
     };
   }
 
-  getOccupancyPercent(date: string, roomSchedule?: RoomScheduleDto): number {
+  getOccupancyPercent(
+    date: string,
+    roomSchedule?: RoomScheduleDto,
+    roomBookings: BookingView[] = [],
+  ): number {
     if (!roomSchedule) return 0;
     const items = roomSchedule.scheduleItems ?? [];
-    if (items.length === 0) {
-      return roomSchedule.isAvailable ? 0 : 100;
+    const slots = this.buildTimeSlots(date, items, roomBookings);
+    if (slots.length === 0) {
+      if (items.length === 0 && roomBookings.length === 0) {
+        return roomSchedule.isAvailable ? 0 : 100;
+      }
+      return 0;
     }
-    const slots = this.buildTimeSlots(date, items);
     const occupiedCount = slots.filter((slot) => slot.status === 'occupied').length;
-    if (slots.length === 0) return 0;
     return Math.round((occupiedCount / slots.length) * 100);
   }
 

@@ -762,6 +762,7 @@ export class RoomTabletComponent implements OnInit, OnDestroy {
       organizer: booking.organizer,
       requiresCheckIn: booking.requiresCheckIn,
       checkedIn: booking.checkedIn,
+      source: booking.source,
     };
   }
 

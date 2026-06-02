@@ -96,6 +96,17 @@ O frontend Angular usa proxy local:
 - `/api` -> `http://localhost:3000`
 - `/health` -> `http://localhost:3000`
 
+## Reuniões criadas no Outlook
+
+Para que uma reunião agendada no Outlook apareça na lista de **Reservas** e permita cancelamento/check-in pela app:
+
+1. Use o **Assistente de agendamento** (Scheduling Assistant) no Outlook.
+2. Adicione a **sala como recurso** (mailbox da sala, ex. `sala@wtorre.com.br`), não apenas o nome da sala no campo *Local*.
+3. Confirme que a sala pertence ao **mesmo tenant Microsoft 365** da localidade usada na app (`x-localidade`: `WTorre` ou `Allianz`).
+4. Verifique se a reserva da sala foi **aceite** (resposta automática ou manual).
+
+Reservas feitas só no calendário do organizador (sem convidar a mailbox da sala) podem marcar a sala como ocupada na grade, mas a app passa a exibi-las na lista de reservas ao fundir a ocupação do `getSchedule` com o calendário da sala. Para cancelar pela app, o evento precisa existir no calendário da sala ou no do organizador com ID Graph válido.
+
 ## Fluxo ponta a ponta para validar
 
 1. Suba o backend (`npm run dev` em `backend`).

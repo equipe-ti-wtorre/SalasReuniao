@@ -249,16 +249,16 @@ export class HomeComponent implements OnInit {
     let firstError = '';
 
     try {
-      await this.loadAllRooms(this.selectedDate);
+      await this.loadAllBookings(this.selectedDate);
     } catch (error) {
-      firstError = this.toErrorMessage(error, 'Erro inesperado ao carregar salas.');
+      firstError = this.toErrorMessage(error, 'Erro inesperado ao carregar reservas.');
     }
 
     try {
-      await this.loadAllBookings(this.selectedDate);
+      await this.loadAllRooms(this.selectedDate);
     } catch (error) {
       if (!firstError) {
-        firstError = this.toErrorMessage(error, 'Erro inesperado ao carregar reservas.');
+        firstError = this.toErrorMessage(error, 'Erro inesperado ao carregar salas.');
       }
     }
 
@@ -330,7 +330,10 @@ export class HomeComponent implements OnInit {
     const byRoom = new Map(scheduleResponse.schedule.map((entry) => [entry.roomEmail, entry]));
     const roomsWithStatus = mappedRooms.map((room) => {
       const roomSchedule = byRoom.get(room.email);
-      const occupancyPercent = this.roomSchedule.getOccupancyPercent(date, roomSchedule);
+      const roomBookings = this.bookings.filter(
+        (booking) => booking.roomEmail.toLowerCase() === room.email.toLowerCase(),
+      );
+      const occupancyPercent = this.roomSchedule.getOccupancyPercent(date, roomSchedule, roomBookings);
       return {
         ...room,
         status: occupancyPercent >= 100 ? 'occupied' : 'available',
@@ -411,6 +414,9 @@ export class HomeComponent implements OnInit {
       startTime: booking.start,
       endTime: booking.end,
       organizer: booking.organizer,
+      requiresCheckIn: booking.requiresCheckIn,
+      checkedIn: booking.checkedIn,
+      source: booking.source,
     };
   }
 

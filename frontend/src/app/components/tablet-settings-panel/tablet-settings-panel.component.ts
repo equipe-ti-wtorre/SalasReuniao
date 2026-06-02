@@ -3,6 +3,7 @@ import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, injec
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RoomsApiService } from '../../services/rooms-api.service';
 import { TabletKioskConfig, TabletKioskConfigService } from '../../services/tablet-kiosk-config.service';
+import { formatApiError } from '../../utils/api-error-message';
 
 @Component({
   selector: 'app-tablet-settings-panel',
@@ -48,13 +49,20 @@ export class TabletSettingsPanelComponent implements OnChanges {
     const value = this.form.getRawValue();
     try {
       this.kioskConfig.saveConfig(value);
-      await this.syncKioskSettingsToServer(value.localidade, value.roomEmail, {
-        checkInModeEnabled: value.checkInModeEnabled,
-        checkInGraceMinutes: this.kioskConfig.normalizeGraceMinutes(value.checkInGraceMinutes),
-      });
-      this.saved.emit(this.kioskConfig.getConfig());
+      const config = this.kioskConfig.getConfig();
+      try {
+        await this.syncKioskSettingsToServer(config.localidade, config.roomEmail, {
+          checkInModeEnabled: config.checkInModeEnabled,
+          checkInGraceMinutes: config.checkInGraceMinutes,
+        });
+        this.errorMessage = '';
+        this.saved.emit(config);
+      } catch (syncError) {
+        this.errorMessage = `Guardado no tablet. Falha ao sincronizar no servidor: ${formatApiError(syncError)}`;
+        this.saved.emit(config);
+      }
     } catch (error) {
-      this.errorMessage = error instanceof Error ? error.message : 'Erro ao guardar configuração.';
+      this.errorMessage = formatApiError(error, 'Erro ao guardar configuração.');
     }
   }
 
