@@ -7,9 +7,9 @@
           type="button"
           [class]="getSlotClass(slot)"
           [style.--span]="slot.span"
-          [disabled]="slot.status === 'occupied'"
+          [disabled]="isSlotDisabled(slot)"
           (click)="onSlotClick(slot)"
-          [title]="slot.status === 'occupied' ? 'Reservado por: ' + (slot.bookedBy || 'Nao identificado') : slot.displayTime + ' - ' + getSlotDurationLabel(slot)"
+          [title]="isPastSlot(slot) ? slot.displayTime + ' — horário já passado' : slot.status === 'occupied' ? 'Reservado por: ' + (slot.bookedBy || 'Nao identificado') : slot.displayTime + ' - ' + getSlotDurationLabel(slot)"
         >
           <span class="time-slot-time">{{ slot.displayTime }}</span>
           @if (slot.status === 'available') {

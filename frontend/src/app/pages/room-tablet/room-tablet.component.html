@@ -192,7 +192,9 @@
       <div class="tablet-overlay__body">
         @if (agendaSlots.length > 0) {
           <app-timeline
-            [slots]="agendaSlots"
+            [slots]="slots"
+            [bookableSlots]="agendaSlots"
+            [scheduleDate]="selectedDate"
             [selectedSlot]="selectedSlot"
             (slotSelect)="onAgendaSlotSelect($event)"
           />

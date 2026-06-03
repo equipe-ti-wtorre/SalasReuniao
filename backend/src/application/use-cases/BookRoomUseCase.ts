@@ -22,6 +22,7 @@ export class BookRoomUseCase {
       requesterEmail: string;
       participants: string[];
       allowRequesterConflict?: boolean;
+      allowParticipantConflict?: boolean;
     },
   ) {
     const requesterEmail = input.requesterEmail.trim().toLowerCase();
@@ -44,7 +45,7 @@ export class BookRoomUseCase {
     const otherBusy = busyParticipants.filter(
       (participant) => participant.email.trim().toLowerCase() !== requesterEmail,
     );
-    if (otherBusy.length > 0) {
+    if (otherBusy.length > 0 && !input.allowParticipantConflict) {
       const participantList = otherBusy.map((participant) => participant.email).join(", ");
       throw new AppError(
         "PARTICIPANT_CONFLICT",

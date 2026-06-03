@@ -31,6 +31,7 @@ const bookingSchema = z
     requesterEmail: z.string().email(),
     participants: z.array(z.string().email()).default([]),
     allowRequesterConflict: z.boolean().optional().default(false),
+    allowParticipantConflict: z.boolean().optional().default(false),
   })
   .refine((value) => new Date(value.start).getTime() < new Date(value.end).getTime(), {
     message: "Intervalo invalido: inicio deve ser menor que fim.",

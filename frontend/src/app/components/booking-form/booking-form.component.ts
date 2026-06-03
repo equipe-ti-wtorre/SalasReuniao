@@ -11,12 +11,7 @@ import {
   RoomsApiService,
 } from '../../services/rooms-api.service';
 import { blocksBooking } from '../../utils/schedule-overlap';
-import { RoomScheduleService } from '../../services/room-schedule.service';
-
-interface EndOption {
-  value: string;
-  label: string;
-}
+import { EndTimeOption, RoomScheduleService } from '../../services/room-schedule.service';
 
 @Component({
   selector: 'app-booking-form',
@@ -44,7 +39,7 @@ export class BookingFormComponent implements OnInit, OnChanges, OnDestroy {
   endTime = '';
   errors: Record<string, string> = {};
 
-  endTimeOptions: EndOption[] = [];
+  endTimeOptions: EndTimeOption[] = [];
   loadingPreview = false;
   previewError = '';
   availabilityPreview: AvailabilityPreviewDto | null = null;
@@ -54,7 +49,7 @@ export class BookingFormComponent implements OnInit, OnChanges, OnDestroy {
 
   requesterSearchResults: DirectoryUserDto[] = [];
   showRequesterDropdown = false;
-  showRequesterConflictConfirm = false;
+  showConflictConfirm = false;
 
   private previewTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly participantQuery$ = new Subject<string>();
@@ -130,7 +125,12 @@ export class BookingFormComponent implements OnInit, OnChanges, OnDestroy {
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['selectedSlot']) {
-      this.syncTimesFromSelection();
+      const prev = changes['selectedSlot'].previousValue as TimeSlotView | null | undefined;
+      const curr = changes['selectedSlot'].currentValue as TimeSlotView | null;
+      const isNewStartSelection = Boolean(curr && (!prev || prev.startTime !== curr.startTime));
+      if (isNewStartSelection) {
+        this.syncTimesFromSelection();
+      }
     }
     if (changes['selectedSlot'] || changes['slots']) {
       this.computeEndOptions();
@@ -231,33 +231,39 @@ export class BookingFormComponent implements OnInit, OnChanges, OnDestroy {
   submit(): void {
     if (this.isSubmitting) return;
     if (!this.validate()) return;
-    if (this.hasBlockingConflicts) return;
-    if (this.requesterHasConflict) {
-      this.showRequesterConflictConfirm = true;
+    if (this.hasRoomConflict) return;
+    if (this.hasPeopleConflicts) {
+      this.showConflictConfirm = true;
       this.cdr.markForCheck();
       return;
     }
     this.emitBooking();
   }
 
-  confirmRequesterConflict(): void {
-    this.showRequesterConflictConfirm = false;
-    this.emitBooking(true);
+  confirmConflict(): void {
+    this.showConflictConfirm = false;
+    this.emitBooking({
+      allowRequesterConflict: true,
+      allowParticipantConflict: true,
+    });
   }
 
-  cancelRequesterConflictConfirm(): void {
-    this.showRequesterConflictConfirm = false;
+  cancelConflictConfirm(): void {
+    this.showConflictConfirm = false;
     this.cdr.markForCheck();
   }
 
-  private emitBooking(allowRequesterConflict = false): void {
+  private emitBooking(options?: { allowRequesterConflict?: boolean; allowParticipantConflict?: boolean }): void {
+    const startTime = this.startTime;
+    const endTime = this.endTime;
     this.submitBooking.emit({
       title: this.title.trim(),
-      startTime: this.startTime,
-      endTime: this.endTime,
+      startTime,
+      endTime,
       requesterEmail: this.normalizedRequesterEmail,
       participants: this.participants.filter((item) => item !== this.normalizedRequesterEmail),
-      ...(allowRequesterConflict ? { allowRequesterConflict: true } : {}),
+      ...(options?.allowRequesterConflict ? { allowRequesterConflict: true } : {}),
+      ...(options?.allowParticipantConflict ? { allowParticipantConflict: true } : {}),
     });
   }
 
@@ -288,19 +294,38 @@ export class BookingFormComponent implements OnInit, OnChanges, OnDestroy {
     return this.optionalParticipantPreview.some((p) => this.isPreviewEntityBusy(p));
   }
 
-  get hasBlockingConflicts(): boolean {
-    if (!this.availabilityPreview) return false;
-    return this.roomHasConflicts || this.otherParticipantsHaveConflicts;
+  get hasPeopleConflicts(): boolean {
+    return this.requesterHasConflict || this.otherParticipantsHaveConflicts;
   }
 
-  get requesterConflictMessage(): string {
+  get hasRoomConflict(): boolean {
+    if (!this.availabilityPreview) return false;
+    return this.roomHasConflicts;
+  }
+
+  get conflictConfirmMessage(): string {
     const timeRange = `${this.formatIsoTime(this.startTime)} – ${this.formatIsoTime(this.endTime)}`;
-    const subject = this.requesterPreview?.conflicts?.find((c) => c.subject?.trim())?.subject?.trim();
-    const base = `O solicitante (${this.normalizedRequesterEmail}) já tem compromisso neste horário (${timeRange}).`;
-    if (subject) {
-      return `${base} Conflito: "${subject}". Deseja realmente agendar a reunião?`;
+    const busyEmails = this.busyPeopleEmails;
+    if (busyEmails.length === 0) {
+      return `Há conflitos de agenda neste horário (${timeRange}). Deseja agendar mesmo assim?`;
     }
-    return `${base} Deseja realmente agendar a reunião?`;
+    if (busyEmails.length === 1) {
+      return `${busyEmails[0]} já tem compromisso neste horário (${timeRange}). Deseja agendar mesmo assim?`;
+    }
+    return `As seguintes pessoas já têm compromisso neste horário (${timeRange}): ${busyEmails.join(', ')}. Deseja agendar mesmo assim?`;
+  }
+
+  private get busyPeopleEmails(): string[] {
+    const emails: string[] = [];
+    if (this.requesterHasConflict && this.normalizedRequesterEmail) {
+      emails.push(this.normalizedRequesterEmail);
+    }
+    for (const p of this.optionalParticipantPreview) {
+      if (this.isPreviewEntityBusy(p)) {
+        emails.push(p.email.trim().toLowerCase());
+      }
+    }
+    return emails;
   }
 
   get availableCount(): number {
@@ -316,14 +341,11 @@ export class BookingFormComponent implements OnInit, OnChanges, OnDestroy {
     return this.hasRoomConflictsForSelectedRange();
   }
 
-  get submitConflictLabel(): string {
-    if (this.otherParticipantsHaveConflicts) {
-      return 'Conflito na agenda';
-    }
-    if (this.roomHasConflicts) {
-      return 'Sala indisponível';
-    }
-    return 'Resolva os Conflitos';
+  get submitButtonLabel(): string {
+    if (this.isSubmitting) return 'A reservar...';
+    if (this.hasRoomConflict) return 'Sala indisponível';
+    if (this.hasPeopleConflicts) return 'Conflito na agenda';
+    return 'Reservar';
   }
 
   isRequesterEmail(email: string): boolean {
@@ -368,65 +390,25 @@ export class BookingFormComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   private computeEndOptions(): void {
-    if (!this.selectedSlot) {
+    if (!this.selectedSlot || !this.startTime) {
       this.endTimeOptions = [];
       return;
     }
 
-    const sorted = [...this.slots].sort((a, b) => a.startMinute - b.startMinute);
-    const startIndex = this.findAnchorSlotIndex(sorted);
-    if (startIndex < 0) {
-      this.endTimeOptions = [];
-      return;
-    }
-
-    const options: EndOption[] = [];
-
-    for (let index = startIndex; index < sorted.length; index += 1) {
-      const current = sorted[index];
-      if (!current || current.status === 'occupied') break;
-      if (index > startIndex) {
-        const previous = sorted[index - 1];
-        if (!previous || previous.endTime !== current.startTime) break;
-      }
-
-      const rangeStart =
-        index === startIndex ? this.selectedSlot.startTime : current.startTime;
-      const rangeStartLabel = this.formatIsoTime(rangeStart);
-      const rangeEndLabel = this.formatIsoTime(current.endTime);
-
-      options.push({
-        value: current.endTime,
-        label: `${rangeStartLabel} – ${rangeEndLabel}`,
-      });
-    }
+    const options = this.schedule.buildAvailableEndTimeOptions(this.startTime, this.slots, {
+      startTime: this.selectedSlot.startTime,
+      startMinute: this.selectedSlot.startMinute,
+    });
 
     this.endTimeOptions = options;
     if (!options.some((option) => option.value === this.endTime)) {
-      this.endTime = options[0]?.value ?? '';
+      const requestedEndMs = new Date(this.endTime).getTime();
+      const stillValid = options.filter((option) => {
+        const optionEndMs = new Date(option.value).getTime();
+        return Number.isFinite(requestedEndMs) && Number.isFinite(optionEndMs) && optionEndMs <= requestedEndMs;
+      });
+      this.endTime = stillValid.length > 0 ? stillValid[stillValid.length - 1].value : (options[0]?.value ?? '');
     }
-  }
-
-  /** Índice do bloco de 30 min que contém o horário selecionado (inclui slots parciais). */
-  private findAnchorSlotIndex(sorted: TimeSlotView[]): number {
-    if (!this.selectedSlot) return -1;
-
-    const exact = sorted.findIndex((slot) => slot.startTime === this.selectedSlot!.startTime);
-    if (exact >= 0) return exact;
-
-    const selectedStartMs = new Date(this.selectedSlot.startTime).getTime();
-    const containing = sorted.findIndex((slot) => {
-      const slotStart = new Date(slot.startTime).getTime();
-      const slotEnd = new Date(slot.endTime).getTime();
-      if (Number.isNaN(slotStart) || Number.isNaN(slotEnd) || Number.isNaN(selectedStartMs)) {
-        return false;
-      }
-      return slotStart <= selectedStartMs && slotEnd > selectedStartMs;
-    });
-    if (containing >= 0) return containing;
-
-    const blockStartMinute = Math.floor(this.selectedSlot.startMinute / 30) * 30;
-    return sorted.findIndex((slot) => slot.startMinute === blockStartMinute);
   }
 
   private validate(): boolean {

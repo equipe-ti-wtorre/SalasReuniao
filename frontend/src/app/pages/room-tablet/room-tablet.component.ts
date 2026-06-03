@@ -89,7 +89,7 @@ export class RoomTabletComponent implements OnInit, OnDestroy {
     (environment.kiosk as { screensaverIdleMs?: number }).screensaverIdleMs ?? DEFAULT_SCREENSAVER_IDLE_MS;
   private scheduleItems: ScheduleItemDto[] = [];
   private roomBookings: BookingView[] = [];
-  private selectedDate = '';
+  selectedDate = '';
   private pollSub?: Subscription;
   private clockSub?: Subscription;
   private countdownSub?: Subscription;
@@ -324,7 +324,7 @@ export class RoomTabletComponent implements OnInit, OnDestroy {
 
   onAgendaSlotSelect(slot: TimeSlotView): void {
     this.closeFullAgenda();
-    this.selectedSlot = slot;
+    this.selectedSlot = this.schedule.resolveBookableSlotClick(slot, this.agendaSlots);
     this.showBookingForm = true;
     this.resetIdleTimer();
   }
@@ -352,6 +352,7 @@ export class RoomTabletComponent implements OnInit, OnDestroy {
           payload.requesterEmail,
           payload.participants,
           payload.allowRequesterConflict,
+          payload.allowParticipantConflict,
         ),
       );
 

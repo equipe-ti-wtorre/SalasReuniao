@@ -29,6 +29,17 @@ export interface WorkHoursOccupancy {
   label: string;
 }
 
+export interface EndTimeOption {
+  value: string;
+  label: string;
+}
+
+/** Referência do slot clicado para localizar o bloco âncora na grelha. */
+export interface EndTimeAnchor {
+  startTime: string;
+  startMinute: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class RoomScheduleService {
   buildDayRange(date: string): { start: string; end: string } {
@@ -77,6 +88,22 @@ export class RoomScheduleService {
    * Horários clicáveis para reserva: blocos de 30 min futuros + intervalo parcial desde "agora"
    * até o fim do bloco atual (ex.: 19:01–19:30), se o bloco estiver livre.
    */
+  /**
+   * Ao clicar num bloco da grelha, devolve o slot reservável correspondente
+   * (inclui slot parcial "agora" no bloco atual, se existir).
+   */
+  resolveBookableSlotClick(clicked: TimeSlotView, bookable: TimeSlotView[]): TimeSlotView {
+    const blockStart = Math.floor(clicked.startMinute / 30) * 30;
+    const partial = bookable.find((slot) => {
+      const slotBlock = Math.floor(slot.startMinute / 30) * 30;
+      return slotBlock === blockStart && slot.startMinute !== blockStart;
+    });
+    if (partial) {
+      return partial;
+    }
+    return bookable.find((slot) => slot.startTime === clicked.startTime) ?? clicked;
+  }
+
   getBookableSlots(slots: TimeSlotView[], now: Date, date: string): TimeSlotView[] {
     const nowMs = now.getTime();
     const partial = this.buildCurrentPartialSlot(slots, now, date);
@@ -356,6 +383,80 @@ export class RoomScheduleService {
     );
   }
 
+  /**
+   * Opções de horário de fim (grelha 30 min) para reserva: percorre blocos livres
+   * consecutivos a partir do início até ocupação ou quebra de contiguidade.
+   */
+  buildAvailableEndTimeOptions(
+    startTimeIso: string,
+    slots: TimeSlotView[],
+    anchor?: EndTimeAnchor,
+  ): EndTimeOption[] {
+    if (!startTimeIso?.trim() || !slots.length) {
+      return [];
+    }
+
+    const sorted = [...slots].sort((a, b) => a.startMinute - b.startMinute);
+    const startIndex = this.findAnchorSlotIndex(sorted, startTimeIso, anchor);
+    if (startIndex < 0) {
+      return [];
+    }
+
+    const options: EndTimeOption[] = [];
+
+    for (let index = startIndex; index < sorted.length; index += 1) {
+      const current = sorted[index];
+      if (!current || current.status === 'occupied') break;
+      if (index > startIndex) {
+        const previous = sorted[index - 1];
+        if (!previous || previous.endTime !== current.startTime) break;
+      }
+
+      const endLabel = this.formatIsoTime(current.endTime);
+      const durationLabel = this.formatBookingDurationLabel(startTimeIso, current.endTime);
+      const label = durationLabel ? `${endLabel} (${durationLabel})` : endLabel;
+
+      options.push({
+        value: current.endTime,
+        label,
+      });
+    }
+
+    return options;
+  }
+
+  /** Bloco já terminou em relação ao instante atual (dia civil de Brasília). */
+  isSlotPast(slot: TimeSlotView, scheduleDate: string, now: Date = new Date()): boolean {
+    const day = scheduleDate.trim();
+    const today = this.todayBrazil();
+    if (day < today) return true;
+    if (day > today) return false;
+
+    const wall = this.getBrazilWallClockParts(now);
+    if (wall.date !== day) {
+      const endMs = new Date(slot.endTime).getTime();
+      return !Number.isNaN(endMs) && endMs <= now.getTime();
+    }
+
+    const nowTotalMinutes = wall.hour * 60 + wall.minute;
+    return slot.endMinute <= nowTotalMinutes;
+  }
+
+  /** Nome legível para exibição (Graph name ou derivado do e-mail). */
+  formatPersonDisplayName(value: string | undefined): string | undefined {
+    const trimmed = value?.trim();
+    if (!trimmed) return undefined;
+    if (!trimmed.includes('@')) return trimmed;
+
+    const localPart = trimmed.split('@')[0] ?? trimmed;
+    const parts = localPart.split(/[._-]+/).filter((part) => part.length > 0);
+    if (!parts.length) return trimmed;
+
+    return parts
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(' ');
+  }
+
   formatIsoTime(iso: string): string {
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) return '--:--';
@@ -465,6 +566,55 @@ export class RoomScheduleService {
     };
   }
 
+  /** Índice do bloco de 30 min que contém o horário de início (inclui slots parciais). */
+  private findAnchorSlotIndex(
+    sorted: TimeSlotView[],
+    startTimeIso: string,
+    anchor?: EndTimeAnchor,
+  ): number {
+    if (anchor) {
+      const exact = sorted.findIndex((slot) => slot.startTime === anchor.startTime);
+      if (exact >= 0) return exact;
+    }
+
+    const selectedStartMs = new Date(startTimeIso).getTime();
+    const containing = sorted.findIndex((slot) => {
+      const slotStart = new Date(slot.startTime).getTime();
+      const slotEnd = new Date(slot.endTime).getTime();
+      if (Number.isNaN(slotStart) || Number.isNaN(slotEnd) || Number.isNaN(selectedStartMs)) {
+        return false;
+      }
+      return slotStart <= selectedStartMs && slotEnd > selectedStartMs;
+    });
+    if (containing >= 0) return containing;
+
+    if (anchor) {
+      const blockStartMinute = Math.floor(anchor.startMinute / 30) * 30;
+      return sorted.findIndex((slot) => slot.startMinute === blockStartMinute);
+    }
+
+    return -1;
+  }
+
+  private formatBookingDurationLabel(startIso: string, endIso: string): string {
+    const startMs = new Date(startIso).getTime();
+    const endMs = new Date(endIso).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+      return '';
+    }
+    const totalMinutes = Math.round((endMs - startMs) / 60_000);
+    if (totalMinutes < 60) {
+      return `${totalMinutes} min`;
+    }
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (minutes === 0) {
+      return hours === 1 ? '1 h' : `${hours} h`;
+    }
+    const hPart = hours === 1 ? '1 h' : `${hours} h`;
+    return `${hPart} ${minutes} min`;
+  }
+
   private resolveBookedBy(
     startTime: string,
     endTime: string,
@@ -472,7 +622,9 @@ export class RoomScheduleService {
     roomBookings: BookingView[],
   ): string | undefined {
     const booking = roomBookings.find((item) => overlapsInterval(startTime, endTime, item.startTime, item.endTime));
-    if (booking?.organizer?.trim()) return booking.organizer.trim();
+    if (booking?.organizer?.trim()) {
+      return this.formatPersonDisplayName(booking.organizer) ?? booking.organizer.trim();
+    }
     const scheduleItem = scheduleItems.find(
       (item) => isBusyScheduleStatus(item.status) && overlapsInterval(startTime, endTime, item.start, item.end),
     );

@@ -252,6 +252,77 @@ test("BookRoomUseCase: falha quando outro participante ocupado mesmo com allowRe
   );
 });
 
+test("BookRoomUseCase: reserva com sucesso quando solicitante e participante ocupados e flags de conflito true", async () => {
+  let booked = false;
+  const gateway = createGatewayMock({
+    bookRoom: async () => {
+      booked = true;
+      return { eventId: "evt-both-override" };
+    },
+  });
+  const preview = createPreviewMock(async (_tenant, payload) => ({
+    start: payload.start,
+    end: payload.end,
+    room: {
+      email: payload.roomEmail,
+      isAvailable: true,
+      availabilityStatus: "available",
+      conflicts: [],
+    },
+    participants: payload.participants.map((email) => ({
+      email,
+      isAvailable: false,
+      availabilityStatus: "busy",
+      conflicts: [{ start: payload.start, end: payload.end, status: "busy" }],
+    })),
+  }));
+  const useCase = new BookRoomUseCase(gateway, preview, createKioskMock());
+
+  const result = await useCase.execute(createTenant(), {
+    ...input,
+    allowRequesterConflict: true,
+    allowParticipantConflict: true,
+  });
+
+  assert.equal(result.eventId, "evt-both-override");
+  assert.equal(booked, true);
+});
+
+test("BookRoomUseCase: reserva com sucesso quando participante ocupado e allowParticipantConflict true", async () => {
+  let booked = false;
+  const gateway = createGatewayMock({
+    bookRoom: async () => {
+      booked = true;
+      return { eventId: "evt-participant-override" };
+    },
+  });
+  const preview = createPreviewMock(async (_tenant, payload) => ({
+    start: payload.start,
+    end: payload.end,
+    room: {
+      email: payload.roomEmail,
+      isAvailable: true,
+      availabilityStatus: "available",
+      conflicts: [],
+    },
+    participants: payload.participants.map((email) => ({
+      email,
+      isAvailable: email === input.requesterEmail,
+      availabilityStatus: email === input.requesterEmail ? "available" : "busy",
+      conflicts:
+        email === input.requesterEmail
+          ? []
+          : [{ start: payload.start, end: payload.end, status: "busy" }],
+    })),
+  }));
+  const useCase = new BookRoomUseCase(gateway, preview, createKioskMock());
+
+  const result = await useCase.execute(createTenant(), { ...input, allowParticipantConflict: true });
+
+  assert.equal(result.eventId, "evt-participant-override");
+  assert.equal(booked, true);
+});
+
 test("BookRoomUseCase: falha quando participante esta ocupado", async () => {
   const gateway = createGatewayMock();
   const preview = createPreviewMock(async (_tenant, payload) => ({

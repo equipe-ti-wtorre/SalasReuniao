@@ -79,7 +79,9 @@
               <p class="muted">Carregando disponibilidade da sala...</p>
             } @else {
               <app-timeline
-                [slots]="bookableSlots"
+                [slots]="slots"
+                [bookableSlots]="bookableSlots"
+                [scheduleDate]="selectedDate"
                 [selectedSlot]="selectedSlot"
                 (slotSelect)="onSlotSelect($event)"
               ></app-timeline>

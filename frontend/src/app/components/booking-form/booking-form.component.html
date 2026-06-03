@@ -146,7 +146,7 @@
                 />
               </div>
               <div class="form-group">
-                <label class="form-label" for="endTime">Duração / Fim *</label>
+                <label class="form-label" for="endTime">Horário de fim *</label>
                 <select id="endTime" name="endTime" class="form-input" [(ngModel)]="endTime" (ngModelChange)="onFieldChange()" autocomplete="off">
                   @for (option of endTimeOptions; track option.value) {
                     <option [value]="option.value">{{ option.label }}</option>
@@ -195,8 +195,8 @@
 
             <div class="form-actions">
               <button type="button" class="btn btn-cancel" (click)="cancel.emit()">Cancelar</button>
-              <button type="submit" class="btn btn-submit" [disabled]="hasBlockingConflicts || isSubmitting">
-                {{ isSubmitting ? 'A reservar...' : hasBlockingConflicts ? submitConflictLabel : 'Reservar' }}
+              <button type="submit" class="btn btn-submit" [disabled]="hasRoomConflict || isSubmitting">
+                {{ submitButtonLabel }}
               </button>
             </div>
           </form>
@@ -243,14 +243,14 @@
     </div>
   </div>
 
-  @if (showRequesterConflictConfirm) {
-    <div class="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="requester-conflict-title" (click)="$event.stopPropagation()">
+  @if (showConflictConfirm) {
+    <div class="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="conflict-confirm-title" (click)="$event.stopPropagation()">
       <div class="confirm-dialog" (click)="$event.stopPropagation()">
-        <h2 id="requester-conflict-title" class="confirm-title">Conflito na agenda do solicitante</h2>
-        <p class="confirm-message">{{ requesterConflictMessage }}</p>
+        <h2 id="conflict-confirm-title" class="confirm-title">Conflito na agenda</h2>
+        <p class="confirm-message">{{ conflictConfirmMessage }}</p>
         <div class="confirm-actions">
-          <button type="button" class="btn btn-cancel" (click)="cancelRequesterConflictConfirm()">Cancelar</button>
-          <button type="button" class="btn btn-submit" [disabled]="isSubmitting" (click)="confirmRequesterConflict()">
+          <button type="button" class="btn btn-cancel" (click)="cancelConflictConfirm()">Cancelar</button>
+          <button type="button" class="btn btn-submit" [disabled]="isSubmitting" (click)="confirmConflict()">
             {{ isSubmitting ? 'A reservar...' : 'Agendar mesmo assim' }}
           </button>
         </div>

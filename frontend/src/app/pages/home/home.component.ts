@@ -41,7 +41,7 @@ interface ApiErrorBody {
   styleUrl: './home.component.scss',
 })
 export class HomeComponent implements OnInit {
-  selectedDate = new Date().toISOString().slice(0, 10);
+  selectedDate = '';
   activeTab: HeaderTab = 'allianzparque';
 
   selectedRoom: RoomView | null = null;
@@ -67,6 +67,7 @@ export class HomeComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    this.selectedDate = this.roomSchedule.todayBrazil();
     setTimeout(() => {
       void this.onRefresh();
     }, 0);
@@ -185,7 +186,7 @@ export class HomeComponent implements OnInit {
   }
 
   onSlotSelect(slot: TimeSlotView): void {
-    this.selectedSlot = slot;
+    this.selectedSlot = this.roomSchedule.resolveBookableSlotClick(slot, this.bookableSlots);
     this.showBookingForm = true;
   }
 
@@ -210,6 +211,7 @@ export class HomeComponent implements OnInit {
           payload.requesterEmail,
           payload.participants,
           payload.allowRequesterConflict,
+          payload.allowParticipantConflict,
         ),
       );
       const updatedBookings = await this.loadAllBookings(this.selectedDate);

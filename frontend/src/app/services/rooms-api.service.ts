@@ -106,10 +106,20 @@ export class RoomsApiService {
     requesterEmail: string,
     participants: string[],
     allowRequesterConflict?: boolean,
+    allowParticipantConflict?: boolean,
   ): Observable<{ eventId: string }> {
     return this.http.post<{ eventId: string }>(
       `${this.baseUrl}/book`,
-      { roomEmail, title, start, end, requesterEmail, participants, allowRequesterConflict: allowRequesterConflict ?? false },
+      {
+        roomEmail,
+        title,
+        start,
+        end,
+        requesterEmail,
+        participants,
+        allowRequesterConflict: allowRequesterConflict ?? false,
+        allowParticipantConflict: allowParticipantConflict ?? false,
+      },
       { headers: this.localidadeHeader(localidade) },
     );
   }

@@ -56,6 +56,9 @@ type GraphCalendarEventResponse = {
       type?: string;
       emailAddress?: { address?: string; name?: string };
     }>;
+    isOrganizer?: boolean;
+    responseStatus?: { response?: string };
+    showAs?: string;
   }>;
 };
 
@@ -357,12 +360,13 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
         : {}),
     });
 
-    // Sala como recurso no calendário do solicitante → Exchange aplica autoaceite da mailbox da sala.
+    // Sala como recurso no calendário do solicitante → solicitante é organizador (sem convite para aceitar).
     const requesterCalendarPayload = {
       subject: input.title,
       ...eventTime,
       location: { displayName: input.roomEmail },
       allowNewTimeProposals: false,
+      showAs: "busy",
       ...(checkInCategories ? { categories: checkInCategories } : {}),
       attendees: [
         {
@@ -383,6 +387,14 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
     try {
       const event = await tryCreate(requesterEmail, requesterCalendarPayload);
       if (event?.id) {
+        await this.tryAutoAcceptRequesterMeeting(
+          client,
+          requesterEmail,
+          event.id,
+          input.title,
+          input.start,
+          input.end,
+        );
         return { eventId: event.id };
       }
     } catch (requesterError: unknown) {
@@ -395,13 +407,23 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
     }
 
     let lastError: unknown;
-    for (const attempt of [
-      () => tryCreate(input.roomEmail, roomCalendarPayload(true)),
-      () => tryCreate(input.roomEmail, roomCalendarPayload(false)),
+    for (const [withAttendees, create] of [
+      [true, () => tryCreate(input.roomEmail, roomCalendarPayload(true))] as const,
+      [false, () => tryCreate(input.roomEmail, roomCalendarPayload(false))] as const,
     ]) {
       try {
-        const event = await attempt();
+        const event = await create();
         if (event?.id) {
+          if (withAttendees) {
+            await this.tryAutoAcceptRequesterMeeting(
+              client,
+              requesterEmail,
+              event.id,
+              input.title,
+              input.start,
+              input.end,
+            );
+          }
           return { eventId: event.id };
         }
       } catch (error: unknown) {
@@ -415,6 +437,93 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
     }
 
     throw new AppError("BOOKING_FAILED", "Falha ao reservar sala.", 500);
+  }
+
+  /**
+   * No fallback (evento na sala com solicitante convidado) ou com conflito de agenda,
+   * o Outlook pode deixar o compromisso pendente — confirma no calendário do solicitante.
+   */
+  private async tryAutoAcceptRequesterMeeting(
+    client: ReturnType<GraphClientFactory["create"]>,
+    requesterEmail: string,
+    createdEventId: string,
+    title: string,
+    startIso: string,
+    endIso: string,
+  ): Promise<void> {
+    const sendAccept = async (eventId: string) => {
+      await this.withRetry(() =>
+        client
+          .api(
+            `/users/${encodeURIComponent(requesterEmail)}/events/${encodeURIComponent(eventId)}/accept`,
+          )
+          .post({ comment: "", sendResponse: false }),
+      );
+    };
+
+    try {
+      await sendAccept(createdEventId);
+      return;
+    } catch {
+      // ID pode ser do calendário da sala; localiza a cópia do convite no solicitante.
+    }
+
+    try {
+      const inviteId = await this.findRequesterMeetingInviteId(
+        client,
+        requesterEmail,
+        title,
+        startIso,
+        endIso,
+      );
+      if (inviteId) {
+        await sendAccept(inviteId);
+      }
+    } catch {
+      // Não bloqueia a reserva se o auto-aceite falhar.
+    }
+  }
+
+  private async findRequesterMeetingInviteId(
+    client: ReturnType<GraphClientFactory["create"]>,
+    requesterEmail: string,
+    title: string,
+    startIso: string,
+    endIso: string,
+  ): Promise<string | undefined> {
+    const startMs = new Date(startIso).getTime();
+    const endMs = new Date(endIso).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+      return undefined;
+    }
+
+    const padMs = 2 * 60 * 1000;
+    const windowStart = new Date(startMs - padMs).toISOString();
+    const windowEnd = new Date(endMs + padMs).toISOString();
+    const normalizedTitle = title.trim().toLowerCase();
+
+    const response = (await this.withRetry(() =>
+      client
+        .api(`/users/${encodeURIComponent(requesterEmail)}/calendarView`)
+        .query({ startDateTime: windowStart, endDateTime: windowEnd })
+        .header("Prefer", `outlook.timezone="${this.graphTimeZone}"`)
+        .select("id,subject,isOrganizer,responseStatus")
+        .get(),
+    )) as GraphCalendarEventResponse;
+
+    const pending = (response.value ?? []).find((event) => {
+      if (event.isOrganizer) return false;
+      if (event.subject?.trim().toLowerCase() !== normalizedTitle) return false;
+      const responseState = event.responseStatus?.response?.toLowerCase();
+      return (
+        !responseState ||
+        responseState === "notresponded" ||
+        responseState === "tentativelyaccepted" ||
+        responseState === "none"
+      );
+    });
+
+    return pending?.id;
   }
 
   private throwIfRoomUnavailable(error: unknown): void {
@@ -844,7 +953,8 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
     fallbackStart: string,
     fallbackEnd: string,
   ): Booking {
-    const organizer = event.organizer?.emailAddress?.address ?? event.organizer?.emailAddress?.name;
+    const emailAddress = event.organizer?.emailAddress;
+    const organizer = emailAddress?.name?.trim() || emailAddress?.address?.trim();
     const flags = mapBookingCheckInFlags(event.categories);
     return {
       eventId: event.id,

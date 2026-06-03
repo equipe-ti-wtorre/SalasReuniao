@@ -38,4 +38,5 @@ export interface BookingSubmitPayload {
   requesterEmail: string;
   participants: string[];
   allowRequesterConflict?: boolean;
+  allowParticipantConflict?: boolean;
 }
