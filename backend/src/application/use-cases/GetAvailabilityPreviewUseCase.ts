@@ -2,8 +2,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { GraphRoomsGateway } from "../../domain/contracts/GraphRoomsGateway";
 import { TenantRepository } from "../../domain/contracts/TenantRepository";
+import { UiConfigRepository } from "../../domain/contracts/UiConfigRepository";
 import { AvailabilityEntity, RoomSchedule } from "../../domain/entities/Room";
 import { Localidade, Tenant } from "../../domain/entities/Tenant";
+import { resolveApiLocalidade } from "../../domain/uiConfigResolver";
 import { isBusyInAvailabilityView, isBusyScheduleStatus, overlapsInterval } from "../../domain/scheduleOverlap";
 import { Booking, ScheduleItem } from "../../domain/entities/Room";
 
@@ -25,18 +27,8 @@ export class GetAvailabilityPreviewUseCase {
   constructor(
     private readonly graphGateway: GraphRoomsGateway,
     private readonly tenantRepository: TenantRepository,
+    private readonly uiConfigRepository: UiConfigRepository,
   ) {}
-
-  private readonly localidadeByDomain: Record<string, Localidade> = {
-    "allianzparque.com.br": "Allianz",
-    "basecoworking.space": "Allianz",
-    "bravolive.com.br": "Allianz",
-    "novoanhangabau.com.br": "Allianz",
-    "wtentretenimento.com.br": "Allianz",
-    "wtorre.com.br": "WTorre",
-    "sendcooliving.com.br": "WTorre",
-    "waltertorre.com.br": "WTorre",
-  };
 
   /** Log de debug: detalhes do overlap para um item (usar apenas para diagnóstico). */
   private logOverlapCheck(
@@ -86,10 +78,8 @@ export class GetAvailabilityPreviewUseCase {
     return Array.from(merged.values());
   }
 
-  private resolveLocalidadeByEmail(email: string): Localidade | null {
-    const domain = this.normalizeEmail(email).split("@")[1];
-    if (!domain) return null;
-    return this.localidadeByDomain[domain] ?? null;
+  private resolveLocalidadeByEmail(email: string, domainToApiLocalidade: Record<string, Localidade>): Localidade | null {
+    return resolveApiLocalidade(email, { tabs: [], domainToApiLocalidade, roomTabOverrides: {}, roomOrderByTab: {} });
   }
 
   private buildEntityFromSchedules(
@@ -159,6 +149,7 @@ export class GetAvailabilityPreviewUseCase {
   ) {
     const normalizedRoomEmail = this.normalizeEmail(input.roomEmail);
     const participants = Array.from(new Set(input.participants.map((email) => this.normalizeEmail(email))));
+    const uiConfig = await this.uiConfigRepository.get();
     debugLog("Arquivo de log: " + PREVIEW_DEBUG_LOG);
     debugLog("Prévia solicitada", {
       roomEmail: normalizedRoomEmail,
@@ -183,7 +174,10 @@ export class GetAvailabilityPreviewUseCase {
     const participantsByLocalidade = new Map<Localidade, string[]>();
     const notValidatedContacts = new Set<string>();
     for (const participantEmail of participants) {
-      const participantLocalidade = this.resolveLocalidadeByEmail(participantEmail);
+      const participantLocalidade = this.resolveLocalidadeByEmail(
+        participantEmail,
+        uiConfig.domainToApiLocalidade,
+      );
       if (!participantLocalidade) {
         notValidatedContacts.add(participantEmail);
         continue;

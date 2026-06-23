@@ -1,6 +1,7 @@
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
+import { AdminRoomView, UiConfig } from '../models/ui-config.models';
 import { TabletKioskConfigService } from './tablet-kiosk-config.service';
 
 export interface RoomDto {
@@ -76,6 +77,43 @@ export class RoomsApiService {
 
   private get baseUrl(): string {
     return this.kioskConfig.normalizeApiBaseUrl(this.kioskConfig.getConfig().apiBaseUrl);
+  }
+
+  getUiConfig(): Observable<{ config: UiConfig }> {
+    return this.http.get<{ config: UiConfig }>(`${this.baseUrl}/ui-config`);
+  }
+
+  getAdminRooms(adminKey: string): Observable<{ rooms: AdminRoomView[] }> {
+    return this.http.get<{ rooms: AdminRoomView[] }>(`${this.baseUrl}/admin/rooms`, {
+      headers: this.adminHeader(adminKey),
+    });
+  }
+
+  saveUiConfig(config: UiConfig, adminKey: string): Observable<{ config: UiConfig }> {
+    return this.http.put<{ config: UiConfig }>(`${this.baseUrl}/admin/ui-config`, config, {
+      headers: this.adminHeader(adminKey),
+    });
+  }
+
+  uploadTabLogo(tabId: string, file: File, adminKey: string): Observable<{ config: UiConfig }> {
+    const formData = new FormData();
+    formData.append('logo', file);
+    return this.http.post<{ config: UiConfig }>(
+      `${this.baseUrl}/admin/tabs/${encodeURIComponent(tabId)}/logo`,
+      formData,
+      { headers: this.adminHeader(adminKey) },
+    );
+  }
+
+  deleteTabLogo(tabId: string, adminKey: string): Observable<{ config: UiConfig }> {
+    return this.http.delete<{ config: UiConfig }>(
+      `${this.baseUrl}/admin/tabs/${encodeURIComponent(tabId)}/logo`,
+      { headers: this.adminHeader(adminKey) },
+    );
+  }
+
+  getApiBaseUrl(): string {
+    return this.baseUrl;
   }
 
   getRooms(localidade: string): Observable<{ rooms: RoomDto[] }> {
@@ -219,5 +257,9 @@ export class RoomsApiService {
 
   private localidadeHeader(localidade: string) {
     return new HttpHeaders({ 'x-localidade': localidade });
+  }
+
+  private adminHeader(adminKey: string) {
+    return new HttpHeaders({ 'x-admin-key': adminKey });
   }
 }

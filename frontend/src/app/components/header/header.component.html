@@ -10,39 +10,23 @@
     </div>
 
     <nav class="tabs" role="tablist">
+      @for (tab of uiConfig.getTabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          class="tab"
+          [class.tab-active]="activeTab === tab.id"
+          (click)="onTabClick(tab.id)"
+        >
+          {{ tab.label }}
+        </button>
+      }
       <button
         type="button"
         role="tab"
         class="tab"
-        [class.tab-active]="activeTab === 'allianzparque'"
-        (click)="onTabClick('allianzparque')"
-      >
-        Allianz Parque
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="tab"
-        [class.tab-active]="activeTab === 'wtorre'"
-        (click)="onTabClick('wtorre')"
-      >
-        Wtorre
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="tab"
-        [class.tab-active]="activeTab === 'novoanhangabau'"
-        (click)="onTabClick('novoanhangabau')"
-      >
-        Novo Anhangabau
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="tab"
-        [class.tab-active]="activeTab === 'reservas'"
-        (click)="onTabClick('reservas')"
+        [class.tab-active]="activeTab === reservasTabId"
+        (click)="onTabClick(reservasTabId)"
       >
         Reservas
       </button>

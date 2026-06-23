@@ -20,6 +20,9 @@ pnpm-debug.log*
 !.env.example
 !**/.env.example
 
+# Logos customizados enviados pelo admin
+backend/data/logos/
+
 # IDE/editor/SO
 .idea/
 .vscode/*

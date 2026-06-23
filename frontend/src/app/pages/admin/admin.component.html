@@ -1,0 +1,215 @@
+<div class="admin-page">
+  @if (!isAuthenticated) {
+    <div class="admin-auth">
+      <div class="admin-auth-panel">
+        <h1>Administração</h1>
+        <p>Informe a chave de administração para configurar abas e salas.</p>
+        @if (pinError) {
+          <p class="admin-error" role="alert">{{ pinError }}</p>
+        }
+        <form (ngSubmit)="onPinSubmit()">
+          <label class="admin-field">
+            <span>Chave de administração</span>
+            <input type="password" [(ngModel)]="pinInput" name="adminKey" autocomplete="off" />
+          </label>
+          <div class="admin-actions">
+            <a routerLink="/" class="btn btn-ghost">Voltar ao app</a>
+            <button type="submit" class="btn btn-primary" [disabled]="isLoading">Entrar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  } @else if (config) {
+    <header class="admin-header">
+      <div>
+        <h1>Administração de abas e salas</h1>
+        <p>Configure domínios por aba e mova salas entre as abas exibidas no app.</p>
+      </div>
+      <div class="admin-header-actions">
+        <a routerLink="/" class="btn btn-ghost">Voltar ao app</a>
+        <button type="button" class="btn btn-ghost" (click)="logout()">Sair</button>
+        <button type="button" class="btn btn-primary" [disabled]="isSaving" (click)="save()">
+          {{ isSaving ? 'Salvando...' : 'Salvar alterações' }}
+        </button>
+      </div>
+    </header>
+
+    @if (saveMessage) {
+      <p class="admin-success">{{ saveMessage }}</p>
+    }
+    @if (saveError) {
+      <p class="admin-error" role="alert">{{ saveError }}</p>
+    }
+    @if (logoError) {
+      <p class="admin-error" role="alert">{{ logoError }}</p>
+    }
+
+    <section class="admin-section">
+      <h2>Domínios e logos por aba</h2>
+      <div class="admin-tabs-grid">
+        @for (tab of config.tabs; track tab.id) {
+          <article class="admin-card">
+            <label class="admin-field">
+              <span>Nome da aba</span>
+              <input type="text" [(ngModel)]="tab.label" [name]="'label-' + tab.id" />
+            </label>
+
+            <div class="admin-logo-block">
+              <span class="admin-logo-label">Logo</span>
+              @if (getTabLogoUrl(tab); as logoUrl) {
+                <img [src]="logoUrl" [alt]="tab.label" class="admin-logo-preview" />
+              } @else {
+                <p class="admin-muted admin-logo-empty">Nenhum logo configurado</p>
+              }
+              <div class="admin-logo-actions">
+                <label class="btn btn-ghost btn-small admin-file-btn">
+                  {{ logoUploadingTabId === tab.id ? 'Enviando...' : 'Enviar logo' }}
+                  <input
+                    type="file"
+                    accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg"
+                    (change)="onLogoSelected(tab, $event)"
+                    [disabled]="logoUploadingTabId === tab.id"
+                  />
+                </label>
+                @if (tab.logoFile) {
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-small"
+                    [disabled]="logoUploadingTabId === tab.id"
+                    (click)="removeCustomLogo(tab)"
+                  >
+                    Remover customizado
+                  </button>
+                }
+              </div>
+              <label class="admin-field">
+                <span>Logo padrão (fallback)</span>
+                <select [(ngModel)]="tab.logoKey" [name]="'logoKey-' + tab.id">
+                  @for (option of builtinLogoOptions; track option.key) {
+                    <option [value]="option.key">{{ option.label }}</option>
+                  }
+                </select>
+              </label>
+            </div>
+
+            <div class="admin-domains">
+              @for (domain of tab.domains; track domain) {
+                <span class="domain-chip">
+                  {{ domain }}
+                  <button type="button" class="chip-remove" (click)="removeDomain(tab, domain)" aria-label="Remover domínio">×</button>
+                </span>
+              }
+            </div>
+            <div class="admin-domain-add">
+              <input
+                type="text"
+                [(ngModel)]="domainInputs[tab.id]"
+                [name]="'domain-' + tab.id"
+                placeholder="novo-dominio.com.br"
+              />
+              <button type="button" class="btn btn-ghost" (click)="addDomain(tab)">Adicionar</button>
+            </div>
+          </article>
+        }
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <h2>Mapeamento domínio → tenant Microsoft</h2>
+      <div class="admin-card admin-mapping-table">
+        @for (mapping of getDomainMappings(); track mapping.domain) {
+          <div class="mapping-row">
+            <span class="mapping-domain">{{ mapping.domain }}</span>
+            <select [(ngModel)]="config.domainToApiLocalidade[mapping.domain]" [name]="'api-' + mapping.domain">
+              @for (option of apiLocalidadeOptions; track option) {
+                <option [value]="option">{{ option }}</option>
+              }
+            </select>
+          </div>
+        }
+      </div>
+    </section>
+
+    <section class="admin-section">
+      <h2>Salas</h2>
+      @if (isLoading) {
+        <p class="admin-muted">Carregando salas...</p>
+      } @else {
+        <div class="admin-card admin-rooms-table">
+          <div class="rooms-header">
+            <span>Sala</span>
+            <span>E-mail</span>
+            <span>Origem</span>
+            <span>Aba</span>
+            <span></span>
+          </div>
+          @for (room of rooms; track room.email) {
+            <div class="rooms-row">
+              <span>{{ room.name }}</span>
+              <span class="rooms-email">{{ room.email }}</span>
+              <span class="rooms-source">{{ room.tabSource === 'override' ? 'Manual' : room.tabSource === 'domain' ? 'Domínio' : 'Sem aba' }}</span>
+              <select [ngModel]="room.tabId ?? ''" (ngModelChange)="setRoomTab(room.email, $event)" [name]="'room-tab-' + room.email">
+                <option value="">Sem aba</option>
+                @for (tab of config.tabs; track tab.id) {
+                  <option [value]="tab.id">{{ tab.label }}</option>
+                }
+              </select>
+              <button
+                type="button"
+                class="btn btn-ghost btn-small"
+                [disabled]="room.tabSource !== 'override'"
+                (click)="clearRoomOverride(room.email)"
+              >
+                Usar domínio
+              </button>
+            </div>
+          }
+        </div>
+      }
+    </section>
+
+    <section class="admin-section">
+      <h2>Ordem de exibição das salas</h2>
+      <p class="admin-muted admin-section-hint">Defina a ordem em que as salas aparecem em cada aba na tela principal.</p>
+      <div class="admin-tabs-grid">
+        @for (tab of config.tabs; track tab.id) {
+          <article class="admin-card">
+            <h3 class="admin-tab-title">{{ tab.label }}</h3>
+            @if (getOrderedRoomsForTab(tab.id).length === 0) {
+              <p class="admin-muted">Nenhuma sala atribuída a esta aba.</p>
+            } @else {
+              <ol class="admin-room-order-list">
+                @for (room of getOrderedRoomsForTab(tab.id); track room.email; let i = $index) {
+                  <li class="admin-room-order-item">
+                    <span class="admin-room-order-index">{{ i + 1 }}.</span>
+                    <span class="admin-room-order-name">{{ room.name }}</span>
+                    <div class="admin-room-order-actions">
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-small"
+                        [disabled]="i === 0"
+                        (click)="moveRoom(tab.id, room.email, -1)"
+                        aria-label="Mover para cima"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-small"
+                        [disabled]="i === getOrderedRoomsForTab(tab.id).length - 1"
+                        (click)="moveRoom(tab.id, room.email, 1)"
+                        aria-label="Mover para baixo"
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  </li>
+                }
+              </ol>
+            }
+          </article>
+        }
+      </div>
+    </section>
+  }
+</div>

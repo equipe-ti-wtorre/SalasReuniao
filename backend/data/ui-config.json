@@ -1,0 +1,72 @@
+{
+  "tabs": [
+    {
+      "id": "nubankparque",
+      "label": "Nubank Parque",
+      "domains": [
+        "nubankparque.com.br"
+      ],
+      "logoKey": "nubankparque",
+      "logoFile": "nubankparque.png"
+    },
+    {
+      "id": "wtorre",
+      "label": "Wtorre",
+      "domains": [
+        "wtorre.com.br"
+      ],
+      "logoKey": "wtorre",
+      "logoFile": "wtorre.png"
+    },
+    {
+      "id": "novoanhangabau",
+      "label": "Novo Anhangabau",
+      "domains": [
+        "novoanhangabau.com.br"
+      ],
+      "logoKey": "novoanhangabau",
+      "logoFile": null
+    }
+  ],
+  "domainToApiLocalidade": {
+    "nubankparque.com.br": "Allianz",
+    "allianzparque.com.br": "Allianz",
+    "basecoworking.space": "Allianz",
+    "bravolive.com.br": "Allianz",
+    "novoanhangabau.com.br": "Allianz",
+    "wtentretenimento.com.br": "Allianz",
+    "wtorre.com.br": "WTorre",
+    "sendcooliving.com.br": "WTorre",
+    "waltertorre.com.br": "WTorre"
+  },
+  "roomTabOverrides": {
+    "sala-anhangabau@nubankparque.com": "novoanhangabau",
+    "sala-pracaramos@nubankparque.com": "novoanhangabau",
+    "sala01.rosa@wtorre.com.br": "nubankparque",
+    "02amarela@nubankparque.com": "nubankparque",
+    "03azul@nubankparque.com": "nubankparque",
+    "04verde@nubankparque.com": "nubankparque",
+    "saladetodos@nubankparque.com": "novoanhangabau",
+    "viadutodocha@nubankparque.com": "novoanhangabau"
+  },
+  "roomOrderByTab": {
+    "nubankparque": [
+      "sala01.rosa@wtorre.com.br",
+      "02amarela@nubankparque.com",
+      "03azul@nubankparque.com",
+      "04verde@nubankparque.com"
+    ],
+    "wtorre": [
+      "sala01@wtorre.com.br",
+      "sala02@wtorre.com.br",
+      "sala03@wtorre.com.br",
+      "sala04@wtorre.com.br"
+    ],
+    "novoanhangabau": [
+      "sala-anhangabau@nubankparque.com",
+      "sala-pracaramos@nubankparque.com",
+      "saladetodos@nubankparque.com",
+      "viadutodocha@nubankparque.com"
+    ]
+  }
+}

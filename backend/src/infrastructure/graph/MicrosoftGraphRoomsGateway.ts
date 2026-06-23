@@ -16,6 +16,8 @@ import {
   mapBookingCheckInFlags,
 } from "../../domain/checkIn";
 import { GraphClientFactory } from "./GraphClientFactory";
+import { UiConfigRepository } from "../../domain/contracts/UiConfigRepository";
+import { belongsToApiLocalidade } from "../../domain/uiConfigResolver";
 import {
   isSyntheticScheduleEventId,
   mergeScheduleItemsIntoBookings,
@@ -73,15 +75,14 @@ type GraphUsersResponse = {
 };
 
 export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
-  constructor(private readonly graphFactory: GraphClientFactory) {}
+  constructor(
+    private readonly graphFactory: GraphClientFactory,
+    private readonly uiConfigRepository: UiConfigRepository,
+  ) {}
   private readonly maxRetries = Number(process.env.GRAPH_RETRIES ?? "2");
   private readonly graphTimeZone = process.env.GRAPH_TIMEZONE ?? "E. South America Standard Time";
   private readonly localTimeZone = process.env.LOCAL_TIMEZONE ?? "America/Sao_Paulo";
   private readonly graphTimeZoneOffset = process.env.GRAPH_TIMEZONE_OFFSET ?? "-03:00";
-  private readonly domainsByLocalidade: Record<string, string[]> = {
-    wtorre: ["wtorre.com.br", "novoanhangabau.com.br"],
-    allianz: ["allianzparque.com.br"],
-  };
 
   private normalizeDomainFromEmail(email: string): string {
     const at = email.lastIndexOf("@");
@@ -89,13 +90,6 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
     return email.slice(at + 1).trim().toLowerCase();
   }
 
-  private belongsToTenantDomain(email: string, localidade: string): boolean {
-    const domains = this.domainsByLocalidade[localidade.trim().toLowerCase()] ?? [];
-    if (domains.length === 0) return true;
-    const domain = this.normalizeDomainFromEmail(email);
-    if (!domain) return false;
-    return domains.includes(domain);
-  }
 
   private normalizeEndOfDayBoundary(localDateTime: string): string {
     const match = localDateTime.match(/^(\d{4})-(\d{2})-(\d{2})T23:59:59$/);
@@ -283,6 +277,7 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
 
     const schedules = [normalizedRoomEmail, ...uniqueParticipants];
     const { entries } = await this.fetchGraphSchedule(tenant, schedules, start, end);
+    const uiConfig = await this.uiConfigRepository.get();
     const entryByEmail = new Map(entries.map((entry) => [entry.scheduleId.toLowerCase(), entry]));
 
     const resolveEntry = (email: string, scheduleIndex: number) => {
@@ -296,7 +291,7 @@ export class MicrosoftGraphRoomsGateway implements GraphRoomsGateway {
       const entry = resolveEntry(email, scheduleIndex);
       const conflicts = this.mapGraphScheduleItems(entry?.scheduleItems);
       const hasConflicts = conflicts.length > 0;
-      const isCrossTenant = !this.belongsToTenantDomain(email, tenant.localidade);
+      const isCrossTenant = !belongsToApiLocalidade(email, tenant.localidade, uiConfig);
       const availabilityStatus: AvailabilityEntity["availabilityStatus"] = hasConflicts
         ? "busy"
         : isCrossTenant

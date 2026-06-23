@@ -7,17 +7,11 @@
 
   <main class="container content">
     <div class="headline top-row">
-      @if (activeTab === 'allianzparque' || activeTab === 'wtorre' || activeTab === 'novoanhangabau') {
+      @if (isLocationTab(activeTab) && activeTabLogo) {
         <div class="locality-logo">
-          @if (activeTab === 'allianzparque') {
-            <img src="assets/logos/allianz-parque.svg" alt="Allianz Parque" class="locality-logo-img" />
-          } @else if (activeTab === 'wtorre') {
-            <img src="assets/logos/wtorre.svg" alt="Wtorre" class="locality-logo-img" />
-          } @else if (activeTab === 'novoanhangabau') {
-            <img src="assets/logos/novo-anhangabau.svg" alt="Novo Anhangabau" class="locality-logo-img" />
-          }
+          <img [src]="activeTabLogo" [alt]="activeTabLabel" class="locality-logo-img" />
         </div>
-      } @else if (activeTab === 'reservas') {
+      } @else if (activeTab === reservasTabId) {
         <div class="reservas-title-block">
           <h2 class="font-display reservas-title">Reservas</h2>
           <p class="reservas-total">Total de {{ bookingsForCurrentTab.length }} reserva@if (bookingsForCurrentTab.length !== 1) {s}</p>
@@ -29,13 +23,13 @@
       </div>
     </div>
 
-    @if (activeTab === 'reservas') {
+    @if (activeTab === reservasTabId) {
       @if (isLoadingBookings) {
         <p class="muted">Carregando reservas...</p>
       } @else {
         <app-bookings-list [bookings]="bookingsForCurrentTab" [hideHeader]="true"></app-bookings-list>
       }
-    } @else if (activeTab === 'allianzparque' || activeTab === 'wtorre' || activeTab === 'novoanhangabau') {
+    } @else if (isLocationTab(activeTab)) {
       @if (!selectedRoom) {
         @if (isLoadingRooms || isLoadingBookings) {
           <p class="muted">Carregando dados da API...</p>

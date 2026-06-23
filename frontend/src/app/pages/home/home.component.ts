@@ -9,15 +9,12 @@ import { RoomDetailsComponent } from '../../components/room-details/room-details
 import { TimelineComponent } from '../../components/timeline/timeline.component';
 import { HeaderTab } from '../../components/header/header.component';
 import { BookingSubmitPayload, BookingView, RoomView, TimeSlotView } from '../../models/ui.models';
+import { RESERVAS_TAB_ID } from '../../models/ui-config.models';
 import { BookingDto, RoomDto, RoomsApiService } from '../../services/rooms-api.service';
 import { RoomScheduleService } from '../../services/room-schedule.service';
 import { ToastService } from '../../services/toast.service';
-
-/** Localidades usadas na API (x-localidade). Carregamos salas e reservas de todas. */
-const API_LOCATIONS = ['Allianz', 'WTorre'] as const;
-const DOMAIN_ALLIANZ_PARQUE = 'allianzparque.com.br';
-const DOMAIN_WTORRE = 'wtorre.com.br';
-const DOMAIN_NOVO_ANHANGABAU = 'novoanhangabau.com.br';
+import { UiConfigService } from '../../services/ui-config.service';
+import { resolveTabLogoUrl, sortRoomsByTabOrder } from '../../utils/ui-config-resolver';
 
 /** Corpo de erro retornado pela API (ex.: 409 Conflict). */
 interface ApiErrorBody {
@@ -42,7 +39,9 @@ interface ApiErrorBody {
 })
 export class HomeComponent implements OnInit {
   selectedDate = '';
-  activeTab: HeaderTab = 'allianzparque';
+  activeTab: HeaderTab = '';
+
+  readonly reservasTabId = RESERVAS_TAB_ID;
 
   selectedRoom: RoomView | null = null;
   selectedSlot: TimeSlotView | null = null;
@@ -62,6 +61,7 @@ export class HomeComponent implements OnInit {
   constructor(
     private readonly api: RoomsApiService,
     private readonly roomSchedule: RoomScheduleService,
+    private readonly uiConfig: UiConfigService,
     private readonly cdr: ChangeDetectorRef,
     private readonly toast: ToastService,
   ) {}
@@ -73,65 +73,38 @@ export class HomeComponent implements OnInit {
     }, 0);
   }
 
-  /** Salas cujo e-mail tem domínio allianzparque.com.br */
-  get roomsAllianzParque(): RoomView[] {
-    return this.rooms.filter(
-      (room) => room.email && room.email.toLowerCase().includes(DOMAIN_ALLIANZ_PARQUE),
-    );
-  }
-
-  /** Salas cujo e-mail tem domínio wtorre.com.br */
-  get roomsWtorre(): RoomView[] {
-    return this.rooms.filter(
-      (room) => room.email && room.email.toLowerCase().includes(DOMAIN_WTORRE),
-    );
-  }
-
-  /** Salas cujo e-mail tem domínio novoanhangabau.com.br */
-  get roomsNovoAnhangabau(): RoomView[] {
-    return this.rooms.filter(
-      (room) => room.email && room.email.toLowerCase().includes(DOMAIN_NOVO_ANHANGABAU),
-    );
-  }
-
-  /** Salas da aba atual (por domínio) */
   get bookableSlots(): TimeSlotView[] {
     return this.roomSchedule.getBookableSlots(this.slots, new Date(), this.selectedDate);
   }
 
   get roomsForCurrentTab(): RoomView[] {
-    switch (this.activeTab) {
-      case 'allianzparque':
-        return this.roomsAllianzParque;
-      case 'wtorre':
-        return this.roomsWtorre;
-      case 'novoanhangabau':
-        return this.roomsNovoAnhangabau;
-      default:
-        return [];
-    }
+    if (!this.uiConfig.isLocationTab(this.activeTab) || !this.uiConfig.config) return [];
+    const filtered = this.rooms.filter(
+      (room) => this.uiConfig.resolveTabForRoom(room.email) === this.activeTab,
+    );
+    return sortRoomsByTabOrder(filtered, this.activeTab, this.uiConfig.config);
   }
 
-  /** Reservas filtradas pela aba atual (por domínio do roomEmail). Na aba Reservas, todas. */
   get bookingsForCurrentTab(): BookingView[] {
-    switch (this.activeTab) {
-      case 'allianzparque':
-        return this.bookings.filter(
-          (b) => b.roomEmail && b.roomEmail.toLowerCase().includes(DOMAIN_ALLIANZ_PARQUE),
-        );
-      case 'wtorre':
-        return this.bookings.filter(
-          (b) => b.roomEmail && b.roomEmail.toLowerCase().includes(DOMAIN_WTORRE),
-        );
-      case 'novoanhangabau':
-        return this.bookings.filter(
-          (b) => b.roomEmail && b.roomEmail.toLowerCase().includes(DOMAIN_NOVO_ANHANGABAU),
-        );
-      case 'reservas':
-        return this.bookings;
-      default:
-        return this.bookings;
-    }
+    if (this.activeTab === this.reservasTabId) return this.bookings;
+    if (!this.uiConfig.isLocationTab(this.activeTab)) return this.bookings;
+    return this.bookings.filter(
+      (booking) => this.uiConfig.resolveTabForRoom(booking.roomEmail) === this.activeTab,
+    );
+  }
+
+  get activeTabLogo(): string | null {
+    const tab = this.uiConfig.getTabs().find((entry) => entry.id === this.activeTab);
+    if (!tab) return null;
+    return resolveTabLogoUrl(tab, this.api.getApiBaseUrl());
+  }
+
+  get activeTabLabel(): string {
+    return this.uiConfig.getTabs().find((entry) => entry.id === this.activeTab)?.label ?? '';
+  }
+
+  isLocationTab(tab: string): boolean {
+    return this.uiConfig.isLocationTab(tab);
   }
 
   onTabChange(tab: HeaderTab): void {
@@ -251,6 +224,15 @@ export class HomeComponent implements OnInit {
     let firstError = '';
 
     try {
+      await this.uiConfig.load();
+      if (!this.activeTab || (!this.uiConfig.isLocationTab(this.activeTab) && this.activeTab !== this.reservasTabId)) {
+        this.activeTab = this.uiConfig.getTabs()[0]?.id ?? this.reservasTabId;
+      }
+    } catch (error) {
+      firstError = this.toErrorMessage(error, 'Erro inesperado ao carregar configuração de abas.');
+    }
+
+    try {
       await this.loadAllBookings(this.selectedDate);
     } catch (error) {
       firstError = this.toErrorMessage(error, 'Erro inesperado ao carregar reservas.');
@@ -280,7 +262,7 @@ export class HomeComponent implements OnInit {
     this.isLoadingRooms = true;
     try {
       const allRooms: RoomView[] = [];
-      for (const loc of API_LOCATIONS) {
+      for (const loc of this.uiConfig.getApiLocations()) {
         await this.loadRoomsWithStatus(loc, date, allRooms);
       }
       this.rooms = allRooms;
@@ -297,7 +279,7 @@ export class HomeComponent implements OnInit {
     this.isLoadingBookings = true;
     try {
       const allBookings: BookingView[] = [];
-      for (const loc of API_LOCATIONS) {
+      for (const loc of this.uiConfig.getApiLocations()) {
         const list = await this.loadBookings(loc, date);
         allBookings.push(...list);
       }
